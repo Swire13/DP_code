@@ -30,30 +30,38 @@ data['year_normalized'] = ((data['sol']-501)/687).astype('int32')
 data["time_idx"] = data["terrestrial_date"].dt.year * 12 + data["terrestrial_date"].dt.month
 data["time_idx"] -= data["time_idx"].min()
 
-
-# data['max_temp'].dropna()
-# data.dropna(subset=['max_temp'],inplace=True)
 data = data[data['max_temp'].notna()]
 
 
 ### TRAINING DATA PREPARATION ###
 
 # define the dataset, i.e. add metadata to pandas dataframe for the model to understand it
-max_encoder_length = 36
-max_prediction_length = 6
+# max_encoder_length = 36 # predpoklad: 3*686
+# max_prediction_length = 7 # predpoklad: 686
+
+max_encoder_length = 3*686 # predpoklad: 3*686
+max_prediction_length = 686 # predpoklad: 686
+
 # training_cutoff = "YYYY-MM-DD"  # day for cutoff
 # training_cutoff = "2014-03-01"
-training_cutoff = data["time_idx"].max() - max_prediction_length
+# training_cutoff = (data["time_idx"].max()).astype('int32') - max_prediction_length
+training_cutoff=2
 
 training = TimeSeriesDataSet(
-    data[lambda x: x.terrestrial_date <= training_cutoff],
-    time_idx= 'sol_normalized',  # column name of time of observation
-    target= 'max_temp',  # column name of target to predict
-    group_ids= ["year_normalized"],
+    data[lambda x: x.year_normalized <= training_cutoff],
+    time_idx = "sol_normalized",  # column name of time of observation
+    target = "max_temp",  # column name of target to predict
+    group_ids = [ "year_normalized" ],
 
-    # group_ids=[ 'id' ],  # column name(s) for timeseries IDs
-    max_encoder_length=max_encoder_length,  # how much history to use
-    max_prediction_length=max_prediction_length,  # how far to predict into future
+    # max_encoder_length=max_encoder_length,  # how much history to use
+    # max_prediction_length=max_prediction_length,  # how far to predict into future
+
+    min_encoder_length         = 0,
+    max_encoder_length         = max_encoder_length,
+    min_prediction_length      = 1,
+    max_prediction_length      = max_prediction_length,
+
+    allow_missing_timesteps=True
     # covariates static for a timeseries ID
     # static_categoricals=[ ... ],
     # static_reals=[ ... ],
@@ -62,11 +70,19 @@ training = TimeSeriesDataSet(
     # time_varying_known_reals=[ ... ],
     # time_varying_unknown_categoricals=[ ... ],
     # time_varying_unknown_reals=[ ... ],
-    allow_missing_timesteps=True
 )
 
 # create validation dataset using the same normalization techniques as for the training dataset
-validation = TimeSeriesDataSet.from_dataset(training, data, min_prediction_idx=training.index.time.max() + 1, stop_randomization=True)
+
+training.categorical_encoders={'max_temp': NaNLabelEncoder(add_nan=True)}
+
+validation = TimeSeriesDataSet.from_dataset(
+    training,
+    data,
+    min_prediction_idx=1,
+    stop_randomization=True
+)
+# min_prediction_idx=training.index.time.max() + 1, # problem s indexom!
 
 # convert datasets to dataloaders for training
 batch_size = 128
@@ -103,6 +119,11 @@ tft = TemporalFusionTransformer.from_dataset(
     reduce_on_plateau_patience=4
 )
 print(f"Number of parameters in network: {tft.size()/1e3:.1f}k")
+
+
+##### vyzera, ze funguje - odtialto je problem s indexovanim, pravdepodobne v rmaci trianing dat... musim najst korektne riesenie na zapis indexov...
+#IndexError: list index out of range
+
 
 # find the optimal learning rate
 res = trainer.tuner.lr_find(
