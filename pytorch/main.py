@@ -1,11 +1,15 @@
+#source: https://towardsdatascience.com/introducing-pytorch-forecasting-64de99b9ef46
+#source: https://github.com/jdb78/pytorch-forecasting
+
 # imports for training
 import pandas as pd
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
 # import dataset, network to train and metric to optimize
-from pytorch_forecasting import TimeSeriesDataSet, TemporalFusionTransformer, QuantileLoss
+from pytorch_forecasting import TimeSeriesDataSet, TemporalFusionTransformer, QuantileLoss, NaNLabelEncoder
 
+### DATA PROCESSING ###
 # load data: this is pandas dataframe with at least a column for
 # * the target (what you want to predict)
 # * the timeseries ID (which should be a unique string to identify each timeseries)
@@ -13,18 +17,41 @@ from pytorch_forecasting import TimeSeriesDataSet, TemporalFusionTransformer, Qu
 data = pd.read_json('/home/matej/PycharmProjects/DP_code/data/marsWeather_till_17_1_2022.json')
 
 data['terrestrial_date']=pd.to_datetime(data['terrestrial_date'])
+data.set_index(data.id,inplace=True)
+# all unique season values
+# mask for every season
+# add new column 0...N
+# append all season together
+
+
+data['sol_normalized'] = (data['sol']-501)%687
+data['year_normalized'] = ((data['sol']-501)/687).astype('int32')
+
+data["time_idx"] = data["terrestrial_date"].dt.year * 12 + data["terrestrial_date"].dt.month
+data["time_idx"] -= data["time_idx"].min()
+
+
+# data['max_temp'].dropna()
+# data.dropna(subset=['max_temp'],inplace=True)
+data = data[data['max_temp'].notna()]
+
+
+### TRAINING DATA PREPARATION ###
 
 # define the dataset, i.e. add metadata to pandas dataframe for the model to understand it
 max_encoder_length = 36
 max_prediction_length = 6
 # training_cutoff = "YYYY-MM-DD"  # day for cutoff
-training_cutoff = "2020-01-01"
+# training_cutoff = "2014-03-01"
+training_cutoff = data["time_idx"].max() - max_prediction_length
 
 training = TimeSeriesDataSet(
     data[lambda x: x.terrestrial_date <= training_cutoff],
-    time_idx= data['terrestrial_date'][1],  # column name of time of observation
-    target= data['max_temp'],  # column name of target to predict
-    group_ids=[ 'id' ],  # column name(s) for timeseries IDs
+    time_idx= 'sol_normalized',  # column name of time of observation
+    target= 'max_temp',  # column name of target to predict
+    group_ids= ["year_normalized"],
+
+    # group_ids=[ 'id' ],  # column name(s) for timeseries IDs
     max_encoder_length=max_encoder_length,  # how much history to use
     max_prediction_length=max_prediction_length,  # how far to predict into future
     # covariates static for a timeseries ID
@@ -35,6 +62,7 @@ training = TimeSeriesDataSet(
     # time_varying_known_reals=[ ... ],
     # time_varying_unknown_categoricals=[ ... ],
     # time_varying_unknown_reals=[ ... ],
+    allow_missing_timesteps=True
 )
 
 # create validation dataset using the same normalization techniques as for the training dataset
@@ -77,7 +105,7 @@ tft = TemporalFusionTransformer.from_dataset(
 print(f"Number of parameters in network: {tft.size()/1e3:.1f}k")
 
 # find the optimal learning rate
-res = trainer.lr_find(
+res = trainer.tuner.lr_find(
     tft, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader, early_stop_threshold=1000.0, max_lr=0.3,
 )
 # and plot the result - always visually confirm that the suggested learning rate makes sense

@@ -1,3 +1,5 @@
+#source: https://medium.com/analytics-vidhya/weather-forecasting-with-recurrent-neural-networks-1eaa057d70c3
+
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
