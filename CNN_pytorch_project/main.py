@@ -19,6 +19,7 @@ import torch.nn as nn
 from tqdm import tqdm_notebook as tqdm
 from torch.utils.data import Dataset,DataLoader
 
+
 df = pd.read_json('/home/matej/PycharmProjects/DP_code/data/marsWeather_till_17_1_2022.json')
 
 train_set = df[:2192]
@@ -131,6 +132,8 @@ def Valid():
         valid_loss = running_loss / len(valid_loader)
         valid_losses.append(valid_loss.detach().numpy())
         print(f'valid_loss {valid_loss}')
+
+
 
 
 epochs = 10
